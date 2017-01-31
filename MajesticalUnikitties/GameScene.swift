@@ -2,88 +2,103 @@
 //  GameScene.swift
 //  MajesticalUnikitties
 //
-//  Created by Julie on 1/12/17.
+//  Created by Julie on 1/13/17.
 //  Copyright © 2017 Julie. All rights reserved.
 //
+// Julie is bad because there is no readme
 
+import Foundation
 import SpriteKit
 import GameplayKit
 
-class GameScene: SKScene {
+// from Make FlappyBird YouTube
+struct PhysicsCategory {
+    static let UniKittyCategory : UInt32 = 0x1 << 1
+    static let CandyCornCategory : UInt32 = 0x1 << 2
+    static let GroundCategory : UInt32 = 0x1 << 3
+}
+
+class GameScene: SKScene, SKPhysicsContactDelegate {
     
-    private var label : SKLabelNode?
-    private var spinnyNode : SKShapeNode?
+    private var uniKitty : UniKitty?
+    private var candyCorn : [CandyCornPair] = []
+    private var ccWidth = CGFloat(100)
+    let meow = SKAction.playSoundFileNamed("CatScream.mp3", waitForCompletion: false)
     
     override func didMove(to view: SKView) {
+        size = view.frame.size
+        backgroundColor = UIColor.cyan
+        self.physicsWorld.contactDelegate = self
+    
+        // background scene
+        let background = SKSpriteNode(imageNamed: "Rainbow")
+        background.size = frame.size
+        background.zPosition = -1
+        background.position = CGPoint(x: frame.midX, y: frame.midY)
+        addChild(background)
         
-        // Get label node from scene and store it for use later
-        self.label = self.childNode(withName: "//helloLabel") as? SKLabelNode
-        if let label = self.label {
-            label.alpha = 0.0
-            label.run(SKAction.fadeIn(withDuration: 2.0))
+        // update the background and candyCorn size based on the screen orientation
+        if UIDevice.current.orientation.isLandscape {
+            ccWidth = 50
+        }
+        else {
+            background.size.width = frame.size.width*2
+            background.position = CGPoint(x: frame.maxX, y: frame.midY)
         }
         
-        // Create shape node to use during mouse interaction
-        let w = (self.size.width + self.size.height) * 0.05
-        self.spinnyNode = SKShapeNode.init(rectOf: CGSize.init(width: w, height: w), cornerRadius: w * 0.3)
+        uniKitty = UniKitty(scene: self)
+        if let uniKitty = uniKitty {
+           addChild(uniKitty)
+        }
+    
+        candyCorn = [CandyCornPair(scene: self, start: CGPoint(x: frame.maxX + ccWidth/2 , y: frame.midY), ccWidth: ccWidth),
+                     CandyCornPair(scene: self, start: CGPoint(x: 3*frame.maxX/2 + ccWidth , y: frame.midY), ccWidth: ccWidth)]
+        addChild(candyCorn[0])
+        addChild(candyCorn[1])
         
-        if let spinnyNode = self.spinnyNode {
-            spinnyNode.lineWidth = 2.5
-            
-            spinnyNode.run(SKAction.repeatForever(SKAction.rotate(byAngle: CGFloat(M_PI), duration: 1)))
-            spinnyNode.run(SKAction.sequence([SKAction.wait(forDuration: 0.5),
-                                              SKAction.fadeOut(withDuration: 0.5),
-                                              SKAction.removeFromParent()]))
-        }
-    }
-    
-    
-    func touchDown(atPoint pos : CGPoint) {
-        if let n = self.spinnyNode?.copy() as! SKShapeNode? {
-            n.position = pos
-            n.strokeColor = SKColor.green
-            self.addChild(n)
-        }
-    }
-    
-    func touchMoved(toPoint pos : CGPoint) {
-        if let n = self.spinnyNode?.copy() as! SKShapeNode? {
-            n.position = pos
-            n.strokeColor = SKColor.blue
-            self.addChild(n)
-        }
-    }
-    
-    func touchUp(atPoint pos : CGPoint) {
-        if let n = self.spinnyNode?.copy() as! SKShapeNode? {
-            n.position = pos
-            n.strokeColor = SKColor.red
-            self.addChild(n)
-        }
+        // define the ground
+        let ground = SKSpriteNode(imageNamed: "Ground")
+        ground.setScale(0.2)
+        ground.size.width = frame.size.width
+        ground.zPosition = 6
+        ground.position = CGPoint(x: frame.width/2, y: 0 + ground.frame.height/2)
+        ground.physicsBody = SKPhysicsBody(rectangleOf: CGSize(width: ground.frame.width,
+                                                               height: ground.frame.height/4))
+        ground.physicsBody?.categoryBitMask = PhysicsCategory.GroundCategory
+        ground.physicsBody?.collisionBitMask = PhysicsCategory.UniKittyCategory
+        ground.physicsBody?.contactTestBitMask = PhysicsCategory.UniKittyCategory
+        ground.physicsBody?.affectedByGravity = false
+        ground.physicsBody?.isDynamic = false
+        addChild(ground)
+        
+
     }
     
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        if let label = self.label {
-            label.run(SKAction.init(named: "Pulse")!, withKey: "fadeInOut")
+        if let uniKitty = uniKitty {
+            uniKitty.flap()
+            
+            uniKitty.physicsBody?.affectedByGravity = true
+            uniKitty.physicsBody?.velocity = CGVector(dx: 0, dy: 0)
+            uniKitty.physicsBody?.applyImpulse(CGVector(dx: 0, dy: 70))
         }
-        
-        for t in touches { self.touchDown(atPoint: t.location(in: self)) }
     }
     
-    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for t in touches { self.touchMoved(toPoint: t.location(in: self)) }
+    func didBegin(_ contact: SKPhysicsContact) {
+        run(meow)
     }
-    
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for t in touches { self.touchUp(atPoint: t.location(in: self)) }
-    }
-    
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for t in touches { self.touchUp(atPoint: t.location(in: self)) }
-    }
-    
     
     override func update(_ currentTime: TimeInterval) {
-        // Called before each frame is rendered
+        for i in 0..<candyCorn.count {
+            candyCorn[i].move()
+            if candyCorn[i].isOffScreen() {
+                candyCorn[i].removeFromParent()
+                candyCorn[i] = CandyCornPair(scene: self,
+                                             start: CGPoint(x: frame.maxX + ccWidth/2 , y: frame.midY),
+                                             ccWidth: ccWidth)
+                addChild(candyCorn[i])
+            }
+        }
     }
 }
+
